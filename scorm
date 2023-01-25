@@ -1,0 +1,217 @@
+import rustici_software_cloud_v2 as scorm_cloud
+from datetime import datetime, timedelta
+import time
+import mysql.connector
+
+
+# ScormCloud API credentials
+APP_ID = "UQU9WON7HY"
+SECRET_KEY = "pKBkeZrKI39xxQVFiiyQh5WJm4IOMbTAItwyq0mw"
+
+
+# String used for output formatting
+OUTPUT_BORDER = "---------------------------------------------------------\n"
+
+
+def main():
+
+    # Configure HTTP basic authorization: APP_NORMAL
+    config = scorm_cloud.Configuration()
+    config.username = APP_ID
+    config.password = SECRET_KEY
+
+    # Set the default configuration values for new configuration objects
+    scorm_cloud.Configuration().set_default(config)
+
+    sc = ScormCloud_Python_Sample()
+
+    try:
+
+        # Establishing the connection with my table 'media'
+        conn = mysql.connector.connect(user='root', password='', host='localhost', database='media')
+        cursor = conn.cursor()
+
+        # Creating a table statement
+        cursor.execute("DROP TABLE IF EXISTS LEARNER")
+
+        # Creating table as per requirement
+        sql ='''CREATE TABLE LEARNER(
+            COURSE_ID CHAR(140),
+            ACTIVITY_ID CHAR(140),
+            TITLE CHAR(140),
+            VERSION INT,
+            XAPI_REGISTRATION_ID INT,
+            REGISTRATION_ID INT,
+            LEARNER_ID INT,
+            LEARNER_EMAIL CHAR(140),
+            LEARNER_FIRST_NAME CHAR(140),
+            LEARNER_LAST_NAME CHAR(140),
+            REGISTRATION_CREATED_DATE CHAR(140),
+            REGISTRATION_COMPLETION CHAR(20),
+            REGISTRATION_COMPLETION_AMOUNT FLOAT,
+            REGISTRATION_SUCCESS CHAR(20),
+            SCORE CHAR(140),
+            TOTAL_SECONDS_TRACKED FLOAT
+        )'''
+        cursor.execute(sql)
+        
+        # Get information about all the courses in ScormCloud
+        course_list = sc.get_all_courses()
+
+        # Get information about all the registrations in ScormCloud
+        registration_list = sc.get_all_registrations()
+
+        # Use the information about courses/registrations to pull in the information about registration interactions and put them into 
+        #       a basic model about that courses interactions with that learner.
+        learners = []
+        for course in course_list:
+            for registration in registration_list:
+                if course.id == registration.course.id:
+                    x = Learner_Model(course.id, course.activity_id, course.title, course.version, 
+                        registration.xapi_registration_id, registration.id, registration.learner.id,
+                        registration.learner.email, registration.learner.first_name, registration.learner.last_name,
+                        registration.created_date,registration.registration_completion, 
+                        registration.registration_completion_amount,registration.registration_success, 
+                        registration.score, registration.total_seconds_tracked)
+                    learners.append(x)
+
+        # Use this list of objects to insert the data into a local mySQL table
+        for learner in learners:
+            # Insert Statement is long due to number of columns
+            insert_stmt = (
+                "INSERT INTO LEARNER(COURSE_ID, ACTIVITY_ID, TITLE, VERSION, XAPI_REGISTRATION_ID, REGISTRATION_ID, LEARNER_ID, LEARNER_EMAIL, LEARNER_FIRST_NAME, LEARNER_LAST_NAME, REGISTRATION_CREATED_DATE, REGISTRATION_COMPLETION, REGISTRATION_COMPLETION_AMOUNT, REGISTRATION_SUCCESS, SCORE, TOTAL_SECONDS_TRACKED)"
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            )
+            # Data is taken from the object and used in the insertion statement
+            data = (learner.course_id, learner.activity_id, learner.title, learner.version, learner.xapi_registration_id, 
+                learner.registration_id, learner.learner_id, learner.learner_email, learner.learner_first_name, learner.learner_last_name,
+                str(learner.registration_created_date), learner.registration_completion, learner.registration_completion_amount, learner.registration_success,
+                str(learner.score), learner.total_seconds_tracked)
+
+            # Once the statements are prepared, try to insert them
+            try:
+                cursor.execute(insert_stmt, data)
+                conn.commit()
+            except:
+                # Rolling back in case of error
+                conn.rollback()
+
+        # Get what was inserted from the table
+        print(OUTPUT_BORDER)
+        sql = '''SELECT * FROM LEARNER'''
+        cursor.execute(sql)
+        result = cursor.fetchall();
+        print(result)
+        print(OUTPUT_BORDER)
+
+        # One more select statement to show how many rows there are
+        sql = '''SELECT REGISTRATION_ID FROM LEARNER'''
+        cursor.execute(sql)
+        result = cursor.fetchall();
+        print(result)
+        print(OUTPUT_BORDER)
+
+        # Close the connection to the local table
+        conn.close()
+
+    except (scorm_cloud.rest.ApiException, ValueError) as err:
+        print(err)
+
+class Learner_Model(object):
+    # Basic Model of the courses interactions with the learner
+    def __init__(self, course_id, activity_id, title, version, xapi_registration_id, 
+        registration_id, learner_id, learner_email, learner_first_name, learner_last_name, 
+        registration_created_date, registration_completion, registration_completion_amount,
+        registration_success, score, total_seconds_tracked):
+        self.course_id = course_id
+        self.activity_id = activity_id
+        self.title = title
+        self.version = version
+        self.xapi_registration_id = xapi_registration_id
+        self.registration_id = registration_id
+        self.learner_id = learner_id
+        self.learner_email = learner_email
+        self.learner_first_name = learner_first_name
+        self.learner_last_name = learner_last_name
+        self.registration_created_date = registration_created_date
+        self.registration_completion = registration_completion
+        self.registration_completion_amount = registration_completion_amount
+        self.registration_success = registration_success
+        self.score = score
+        self.total_seconds_tracked = total_seconds_tracked
+    
+    def __str__(self):
+        return "course_id: {0}\nactivity_id: {1}\ntitle: {2}\nversion: {3}\nxapi_registration_id: {4}\nregistration_id: {5}\nlearner_id: {6}\nlearner_email: {7}\nlearner_first_name: {8}\nlearner_last_name: {9}\nregistration_created_date: {10}\nregistration_completion: {11}\nregistration_completion_amount: {12}\nregistration_success: {13}\nscore: {14}\ntotal_seconds_tracked: {15}".format(
+            self.course_id, self.activity_id, self.title, self.version, 
+            self.xapi_registration_id, self.registration_id, self.learner_id, self.learner_email,
+            self.learner_first_name,self.learner_last_name,self.registration_created_date, 
+            self.registration_completion, self.registration_completion_amount, self.registration_success, 
+            self.score, self.total_seconds_tracked)
+
+class ScormCloud_Python_Sample:
+
+    def get_all_courses(self):
+        """
+        Gets information about all courses. The result received from the API
+        call is a paginated list, meaning that additional calls are required
+        to retrieve all the information from the API. This has already been
+        accounted for in the sample.
+
+        :returns: List of detailed information about all of the courses.
+        :rtype: list[CourseSchema]
+        """
+
+        # (Optional) Further authenticate via OAuth token access
+        # self.__configure_oauth([ "read:course" ])
+
+        # Additional filters can be provided to this call to get a subset
+        # of all courses.
+        course_api = scorm_cloud.CourseApi()
+        response = course_api.get_courses()
+
+        # This call is paginated, with a token provided if more results exist
+        course_list = response.courses
+        while response.more is not None:
+            response = course_api.get_courses(more=response.more)
+            course_list += response.courses
+
+        return course_list
+
+    def get_all_registrations(self):
+        """
+        Gets information about the registration progress for all
+        registrations. The result received from the API call is a paginated
+        list, meaning that additional calls are required to retrieve all the
+        information from the API. This has already been accounted for in the
+        sample.
+
+        This call can be quite time-consuming and tedious with lots of
+        registrations. If you find yourself making lots of calls to this
+        endpoint, it might be worthwhile to look into registration postbacks.
+
+        More details can be found in the documentation:
+        https://cloud.scorm.com/docs/v2/guides/postback/
+
+        :returns: List of detailed information about all of the registrations.
+        :rtype: list[RegistrationSchema]
+        """
+
+        # (Optional) Further authenticate via OAuth token access
+        # self.__configure_oauth([ "read:registration" ])
+
+        # Additional filters can be provided to this call to get a subset
+        # of all registrations.
+        registration_api = scorm_cloud.RegistrationApi()
+        response = registration_api.get_registrations()
+
+        # This call is paginated, with a token provided if more results exist
+        registration_list = response.registrations
+        while response.more is not None:
+            response = registration_api.get_registrations(more=response.more)
+            registration_list += response.registrations
+
+        return registration_list
+
+
+if __name__ == "__main__":
+    main()
